@@ -65,7 +65,7 @@ describe("the newest release", () => {
     await expect(latestRelease(releases)).rejects.toThrow("fetch failed");
   });
 
-  it("hands over install.sh only when it matches the release's SHA256SUMS", async () => {
+  it("hands over an installer only when it matches the release's SHA256SUMS", async () => {
     const script = "#!/bin/sh\necho installed\n";
     const sum = NodeCrypto.createHash("sha256").update(script).digest("hex");
     const serve = (sums: string) =>
@@ -78,5 +78,10 @@ describe("the newest release", () => {
     expect(String(await releaseInstaller("https://x/releases", "0.2.0"))).toBe(script);
     serve(`${"f".repeat(64)}  install.sh\n`);
     await expect(releaseInstaller("https://x/releases", "0.2.0")).rejects.toThrow("SHA256SUMS");
+    // Windows asks for install.ps1, checked against its own line.
+    serve(`${sum}  install.sh\n`);
+    await expect(releaseInstaller("https://x/releases", "0.2.0", "install.ps1")).rejects.toThrow(
+      "install.ps1 doesn't match",
+    );
   });
 });

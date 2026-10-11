@@ -5,13 +5,13 @@ compare offers. It runs on your machine, on your own Claude subscription.
 
 [![npm](https://img.shields.io/npm/v/getmyprof?style=flat-square&color=000&label=npm)](https://www.npmjs.com/package/getmyprof)
 [![release](https://img.shields.io/github/v/release/EhsanulHaqueSiam/getmyprof?style=flat-square&color=000)](https://github.com/EhsanulHaqueSiam/getmyprof/releases/latest)
-![macOS and Linux](https://img.shields.io/badge/macOS%20%7C%20Linux-000?style=flat-square)
+![macOS, Linux and Windows](https://img.shields.io/badge/macOS%20%7C%20Linux%20%7C%20Windows-000?style=flat-square)
 
 ![A hunt: ask, allow a paid lookup, review what it found, see the grid](docs/screenshots/hunt.gif)
 
 ## Install
 
-macOS or Linux, with Node 24 or newer:
+macOS, Linux or Windows, with Node 24 or newer:
 
 ```sh
 npx getmyprof@latest
@@ -28,6 +28,12 @@ No Node? This one brings its own:
 
 ```sh
 curl -fsSL https://github.com/EhsanulHaqueSiam/getmyprof/releases/latest/download/install.sh | sh
+```
+
+On Windows, in PowerShell:
+
+```powershell
+irm https://github.com/EhsanulHaqueSiam/getmyprof/releases/latest/download/install.ps1 | iex
 ```
 
 ### Desktop app
@@ -48,6 +54,10 @@ Any other Linux, Arch included: download the `.AppImage` from
 The Mac app isn't notarized yet. Homebrew and the one-liner handle that; a dmg dragged in from the
 browser needs `xattr -dr com.apple.quarantine /Applications/getmyprof.app` once.
 
+Windows: download `getmyprof-<version>-x64-setup.exe` from
+[Releases](https://github.com/EhsanulHaqueSiam/getmyprof/releases/latest) and run it, or the `.msi`
+for managed installs. It isn't code-signed yet, so Windows asks once: More info, then Run anyway.
+
 ### Update
 
 | Installed with              | Update                                                 |
@@ -55,7 +65,9 @@ browser needs `xattr -dr com.apple.quarantine /Applications/getmyprof.app` once.
 | npm                         | `npm install -g getmyprof@latest`                      |
 | the one-liner               | `getmyprof update`                                     |
 | Mac app, Homebrew, AppImage | Update, in the app                                     |
+| Windows setup `.exe`        | Update, in the app                                     |
 | `.deb`                      | the app opens the release; `sudo apt install` that one |
+| `.msi`                      | the app opens the release; install that one            |
 
 ## Commands
 

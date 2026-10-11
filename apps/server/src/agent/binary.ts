@@ -17,6 +17,8 @@ import { homeDir } from "../db.ts";
 /** The SDK version a release build pins (`pnpm dist runtime` defines it); unset in dev. */
 const PINNED = process.env.GETMYPROF_CLAUDE_SDK;
 const PACKAGE = `@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}`;
+/** The binary's file name in that package, and on PATH. */
+export const CLAUDE_FILE = process.platform === "win32" ? "claude.exe" : "claude";
 
 const resolveFrom = (base: string, id: string) => {
   try {
@@ -31,16 +33,16 @@ const isFile = (file: string) => NodeFS.statSync(file, { throwIfNoEntry: false }
 function sdkCopy() {
   const sdk = resolveFrom(import.meta.url, "@anthropic-ai/claude-agent-sdk");
   return (
-    resolveFrom(import.meta.url, `${PACKAGE}/claude`) ??
-    (sdk && resolveFrom(sdk, `${PACKAGE}/claude`))
+    resolveFrom(import.meta.url, `${PACKAGE}/${CLAUDE_FILE}`) ??
+    (sdk && resolveFrom(sdk, `${PACKAGE}/${CLAUDE_FILE}`))
   );
 }
 
-const fetched = (version: string) => NodePath.join(homeDir(), "claude", version, "claude");
+const fetched = (version: string) => NodePath.join(homeDir(), "claude", version, CLAUDE_FILE);
 
 function onPath() {
   for (const dir of (process.env.PATH ?? "").split(NodePath.delimiter))
-    if (dir && isFile(NodePath.join(dir, "claude"))) return NodePath.join(dir, "claude");
+    if (dir && isFile(NodePath.join(dir, CLAUDE_FILE))) return NodePath.join(dir, CLAUDE_FILE);
   return null;
 }
 
@@ -114,10 +116,15 @@ async function download(version: string, progress: (percent: number) => void) {
     );
     if (`sha512-${hash.digest("base64")}` !== dist.integrity)
       throw new Error("the download doesn't match the registry's checksum");
-    const tar = NodeChild.spawnSync("tar", ["-xzf", tgz, "-C", work, "package/claude"]);
+    // Windows 10 and later ship bsdtar, named by path: Git's GNU tar reads "C:" as a remote host.
+    const tarBin =
+      process.platform === "win32"
+        ? NodePath.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe")
+        : "tar";
+    const tar = NodeChild.spawnSync(tarBin, ["-xzf", tgz, "-C", work, `package/${CLAUDE_FILE}`]);
     if (tar.status !== 0) throw new Error(`tar: ${String(tar.stderr).slice(0, 200)}`);
-    NodeFS.chmodSync(NodePath.join(work, "package/claude"), 0o755);
-    NodeFS.renameSync(NodePath.join(work, "package/claude"), fetched(version));
+    NodeFS.chmodSync(NodePath.join(work, "package", CLAUDE_FILE), 0o755);
+    NodeFS.renameSync(NodePath.join(work, "package", CLAUDE_FILE), fetched(version));
   } finally {
     NodeFS.rmSync(work, { recursive: true, force: true });
   }
