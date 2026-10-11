@@ -50,9 +50,9 @@ emulated); its command line has an arm64 zip.
 - On Linux the command line is `getmyprof` and the app is `getmyprof-desktop`.
 - On Windows, install.ps1 unpacks each version under `%LOCALAPPDATA%\getmyprof\<version>` and
   writes `bin\getmyprof.cmd` (on the user's PATH) pointing at it, so an update never overwrites the
-  `node.exe` a running server holds open. The setup .exe installs per user into
-  `%LOCALAPPDATA%\Programs\getmyprof`; the uninstaller beside the app is how `updates.ts` tells it
-  from an .msi install.
+  `node.exe` a running server holds open. The setup .exe installs per user under
+  `%LOCALAPPDATA%\Programs`; the uninstaller beside the app is how `updates.ts` tells it from an
+  .msi install.
 
 ## Cutting a release
 
