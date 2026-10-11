@@ -201,6 +201,7 @@ jobs:
           # updates.ts reads this uninstaller beside the app as "this install updates itself".
           if ((Split-Path -Leaf $uninstaller) -ne 'Uninstall getmyprof.exe') { throw "the uninstaller is $uninstaller" }
           if (-not (Test-Path "$dir\getmyprof.exe")) { throw "no getmyprof.exe in $dir" }
+          if ((Split-Path -Leaf $dir) -ne 'getmyprof') { throw "installed in $dir" }
           $env:GETMYPROF_HOME = "$env:RUNNER_TEMP\home-app"
           $app = Start-Process "$dir\getmyprof.exe" -PassThru
           for ($i = 0; $i -lt 90 -and -not (Test-Path "$env:GETMYPROF_HOME\server.json"); $i++) { Start-Sleep 1 }

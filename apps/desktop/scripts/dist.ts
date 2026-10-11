@@ -172,7 +172,7 @@ async function buildCli(targets: string[]) {
   }
 }
 
-function desktopConfig(): Configuration {
+function desktopConfig(os: string): Configuration {
   const [owner = "", repo = ""] = releases.split("/");
   const signed = Boolean(process.env.CSC_LINK);
   const entitlements = NodePath.join(desktop, "build/entitlements.mac.plist");
@@ -186,6 +186,9 @@ function desktopConfig(): Configuration {
       version,
       homepage: `https://github.com/${releases}`,
       desktopName: "getmyprof-desktop.desktop",
+      // Windows names the per-user install folder after the package ("@getmyprof/desktop"), and
+      // updates keep that folder. Windows only: the .deb's package name comes from it too.
+      ...(os === "win" ? { name: "getmyprof" } : {}),
     },
     directories: { output: release, buildResources: "build" },
     files: ["package.json", "dist/*.mjs", "dist/*.cjs"],
@@ -246,7 +249,7 @@ async function buildDesktop([os, ...archs]: string[]) {
     if (!process.env[name]) delete process.env[name];
   await build({
     projectDir: desktop,
-    config: desktopConfig(),
+    config: desktopConfig(os),
     publish: "never",
     [os]: [],
     x64: archs.includes("x64"),
