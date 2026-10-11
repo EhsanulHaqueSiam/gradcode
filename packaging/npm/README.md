@@ -7,7 +7,7 @@ compare offers. It runs on your machine, on your own Claude subscription.
 
 ## Use
 
-macOS or Linux, with Node 24 or newer:
+macOS, Linux or Windows, with Node 24 or newer:
 
 ```sh
 npx getmyprof@latest

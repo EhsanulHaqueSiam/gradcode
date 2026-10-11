@@ -15,12 +15,20 @@ const bundle = () => NodePath.resolve(process.execPath, "../../..");
 
 /**
  * How this install moves to a new version. `feed`: electron-updater downloads and swaps it (an
- * AppImage, or a Mac app with the Developer ID signature Squirrel.Mac requires). `script`: an
- * unsigned Mac app runs the release's install.sh over itself. `page`: a .deb, which only
- * apt may replace, so the release opens to download the new one.
+ * AppImage, the Windows setup .exe, or a Mac app with the Developer ID signature Squirrel.Mac
+ * requires). `script`: an unsigned Mac app runs the release's install.sh over itself. `page`: a
+ * .deb or .msi, which only their package manager may replace, so the release opens to download
+ * the new one.
  */
 function updateWay() {
   if (process.platform === "linux") return process.env.APPIMAGE ? "feed" : "page";
+  // The setup .exe leaves its uninstaller beside the app; an .msi install doesn't.
+  if (process.platform === "win32")
+    return NodeFS.existsSync(
+      NodePath.join(NodePath.dirname(process.execPath), `Uninstall ${app.getName()}.exe`),
+    )
+      ? "feed"
+      : "page";
   if (process.platform !== "darwin") return "page";
   const r = NodeChild.spawnSync("codesign", ["-dv", "--verbose=2", bundle()], { encoding: "utf8" });
   return (r.stderr ?? "").includes("Authority=Developer ID Application") ? "feed" : "script";
@@ -31,7 +39,7 @@ function updateWay() {
  * SHA256SUMS, downloads the dmg and copies getmyprof.app over this bundle. Reports curl's percent.
  */
 async function installOver(releases: string, version: string, progress: (percent: number) => void) {
-  const script = await releaseInstaller(releasesUrl(releases), version);
+  const script = await releaseInstaller(releasesUrl(releases), version, "install.sh");
   const file = NodePath.join(app.getPath("temp"), `getmyprof-install-${process.pid}.sh`);
   NodeFS.writeFileSync(file, script);
   const child = NodeChild.spawn("sh", [file, "--desktop"], {

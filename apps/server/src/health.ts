@@ -12,10 +12,13 @@ type Env = Record<string, string | undefined>;
 export const gradhuntDir = (env: Env) =>
   env.GRADHUNT_DIR ?? NodePath.join(NodeOS.homedir(), "Personal/gradhunt");
 
+// On Windows a command is bin.exe, or bin.cmd from npm.
+const names = (bin: string) =>
+  process.platform === "win32" ? [`${bin}.exe`, `${bin}.cmd`] : [bin];
 const onPath = (env: Env, bin: string) =>
   (env.PATH ?? "")
     .split(NodePath.delimiter)
-    .some((dir) => dir !== "" && NodeFS.existsSync(NodePath.join(dir, bin)));
+    .some((dir) => dir !== "" && names(bin).some((n) => NodeFS.existsSync(NodePath.join(dir, n))));
 
 /**
  * Which local tools exist. File checks only: it never spawns a process or spends money. Claude

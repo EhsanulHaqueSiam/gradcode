@@ -99,6 +99,8 @@ export async function startServer(o: Launch) {
     env: { ...process.env, ...o.env, SERVER_PORT: String(port), GETMYPROF_WEB_DIR: o.webDir },
     stdio: ["ignore", log, log],
     detached: o.detached ?? false,
+    // On Windows a detached Node would open a console window of its own.
+    windowsHide: true,
   });
   NodeFS.closeSync(log);
   let exited = false;
@@ -180,17 +182,24 @@ async function releaseAsset(releases: string, version: string, name: string) {
   return Buffer.from(await r.arrayBuffer());
 }
 
+/** The release's installer for this machine: install.ps1 on Windows, install.sh elsewhere. */
+export const INSTALLER = process.platform === "win32" ? "install.ps1" : "install.sh";
+
 /**
- * A release's own install.sh, checked against that release's SHA256SUMS. `getmyprof update` runs
- * it, and so does an unsigned Mac app (`--desktop`) to replace itself.
+ * A release's own installer, checked against that release's SHA256SUMS. `getmyprof update` runs
+ * it, and so does an unsigned Mac app (install.sh `--desktop`) to replace itself.
  */
-export async function releaseInstaller(releases: string, version: string) {
+export async function releaseInstaller(releases: string, version: string, name = INSTALLER) {
   const [sums, script] = await Promise.all([
     releaseAsset(releases, version, "SHA256SUMS"),
-    releaseAsset(releases, version, "install.sh"),
+    releaseAsset(releases, version, name),
   ]);
-  const expected = /^([0-9a-f]{64}) {2}install\.sh$/m.exec(sums.toString())?.[1];
+  const expected = sums
+    .toString()
+    .split("\n")
+    .find((line) => line.slice(66) === name)
+    ?.slice(0, 64);
   const actual = NodeCrypto.createHash("sha256").update(script).digest("hex");
-  if (expected !== actual) throw new Error("install.sh doesn't match the release's SHA256SUMS.");
+  if (expected !== actual) throw new Error(`${name} doesn't match the release's SHA256SUMS.`);
   return script;
 }

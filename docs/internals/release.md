@@ -6,19 +6,24 @@ token. Installed apps and `getmyprof update` look there.
 
 ## What ships
 
-| Asset                                                          | Who uses it                                                                                          | Updates                                          |
-| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| `getmyprof-X.Y.Z-{darwin,linux}-{arm64,x64}.tar.gz`            | `install.sh`: the `getmyprof` command, with its own Node 24                                          | `getmyprof update` runs the release's install.sh |
-| `getmyprof-X.Y.Z-{arm64,x64}.dmg` and `.zip`                   | the Mac app; the cask; the zip is Squirrel's                                                         | Update runs the release's install.sh over it     |
-| `getmyprof-X.Y.Z-{x86_64,arm64}.AppImage`                      | `install.sh --desktop` on Linux                                                                      | downloads and replaces itself                    |
-| `getmyprof_X.Y.Z_{amd64,arm64}.deb`                            | `apt install`                                                                                        | a notice; the package manager installs           |
-| `latest-mac.yml`, `latest-linux.yml`, `latest-linux-arm64.yml` | electron-updater's feed                                                                              |                                                  |
-| `SHA256SUMS`                                                   | install.sh and `getmyprof update` check every download against it                                    |                                                  |
-| `install.sh`                                                   | `curl -fsSL https://github.com/EhsanulHaqueSiam/getmyprof/releases/latest/download/install.sh \| sh` | always the latest release's                      |
+| Asset                                                         | Who uses it                                                                                          | Updates                                           |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `getmyprof-X.Y.Z-{darwin,linux}-{arm64,x64}.tar.gz`           | `install.sh`: the `getmyprof` command, with its own Node 24                                          | `getmyprof update` runs the release's install.sh  |
+| `getmyprof-X.Y.Z-{arm64,x64}.dmg` and `.zip`                  | the Mac app; the cask; the zip is Squirrel's                                                         | Update runs the release's install.sh over it      |
+| `getmyprof-X.Y.Z-{x86_64,arm64}.AppImage`                     | `install.sh --desktop` on Linux                                                                      | downloads and replaces itself                     |
+| `getmyprof_X.Y.Z_{amd64,arm64}.deb`                           | `apt install`                                                                                        | a notice; the package manager installs            |
+| `getmyprof-X.Y.Z-win32-{x64,arm64}.zip`                       | `install.ps1`: the `getmyprof` command on Windows, with its own Node                                 | `getmyprof update` runs the release's install.ps1 |
+| `getmyprof-X.Y.Z-x64-setup.exe`                               | the Windows app, installed per user                                                                  | downloads and replaces itself                     |
+| `getmyprof-X.Y.Z-x64.msi`                                     | the Windows app for managed installs                                                                 | a notice; install the new .msi                    |
+| `latest-mac.yml`, `latest-linux*.yml`, `latest.yml` (Windows) | electron-updater's feed                                                                              |                                                   |
+| `SHA256SUMS`                                                  | the installers and `getmyprof update` check every download against it                                |                                                   |
+| `install.sh`                                                  | `curl -fsSL https://github.com/EhsanulHaqueSiam/getmyprof/releases/latest/download/install.sh \| sh` | always the latest release's                       |
+| `install.ps1`                                                 | `irm https://github.com/EhsanulHaqueSiam/getmyprof/releases/latest/download/install.ps1 \| iex`      | always the latest release's                       |
 
 The npm package `getmyprof` (`npx getmyprof@latest`, its page's README is `packaging/npm/README.md`)
 and the Homebrew cask are built every release and published only when their secret is set. There
-is no AUR package; Arch runs the AppImage.
+is no AUR package; Arch runs the AppImage. The Windows app is x64 only (Windows on Arm runs it
+emulated); its command line has an arm64 zip.
 
 ## How the pieces run
 
@@ -43,6 +48,11 @@ is no AUR package; Arch runs the AppImage.
 - The app's Electron profile and its one-instance lock live in `GETMYPROF_HOME/desktop`, so a run
   on a temp home never touches a real install's.
 - On Linux the command line is `getmyprof` and the app is `getmyprof-desktop`.
+- On Windows, install.ps1 unpacks each version under `%LOCALAPPDATA%\getmyprof\<version>` and
+  writes `bin\getmyprof.cmd` (on the user's PATH) pointing at it, so an update never overwrites the
+  `node.exe` a running server holds open. The setup .exe installs per user under
+  `%LOCALAPPDATA%\Programs`; the uninstaller beside the app is how `updates.ts` tells it from an
+  .msi install.
 
 ## Cutting a release
 
@@ -54,10 +64,14 @@ the version differ. `pnpm release status` shows main's version, the last tag, wh
 and that tag's run; `pnpm release watch [X.Y.Z]` follows a run. The release's notes are the
 install link and GitHub's list of PRs merged since the previous tag, so PR titles are the changelog.
 
+A PR that changes the release build (release.yml lists the paths) runs the whole workflow except
+publish. Its Windows job installs every Windows download on a Windows runner and starts it, since
+nobody tests on Windows by hand.
+
 `pnpm release build` builds this machine's command line and desktop app into `dist/release`, no
 publishing. Other platforms and the npm package use the same steps: `pnpm dist runtime`, then
-`pnpm dist cli darwin-arm64`, `pnpm dist desktop mac arm64`, `pnpm dist npm`, `pnpm dist sums`
-into `dist/release`. `GETMYPROF_UPDATE_URL=http://host/feed` points a test build's updater at
+`pnpm dist cli darwin-arm64` (Windows zips need `zip` and `unzip`), `pnpm dist desktop mac arm64`
+(`win x64` only on Windows), `pnpm dist npm`, `pnpm dist sums` into `dist/release`. `GETMYPROF_UPDATE_URL=http://host/feed` points a test build's updater at
 any folder holding a `latest-*.yml`. From a checkout, `pnpm dist runtime` then
 `pnpm --filter @getmyprof/desktop start` runs the app unpackaged.
 
@@ -83,6 +97,9 @@ an unchanged cask are left alone. A rerun uses the workflow as it was at the tag
   restarts. Gatekeeper blocks an ad-hoc app downloaded in a browser; curl (install.sh) sets no
   quarantine and the cask strips it. With a browser download:
   `xattr -dr com.apple.quarantine /Applications/getmyprof.app`.
+- **An unsigned Windows app.** SmartScreen says "Windows protected your PC" the first time the
+  setup .exe or .msi runs: More info, then Run anyway. A code-signing certificate would end that;
+  none is set up. electron-updater installs unsigned updates, since the app names no publisher.
 - **Testing an update.** Build with `GETMYPROF_UPDATE_URL=http://127.0.0.1:<port>/feed`, serve a
   folder whose `feed/latest-mac.yml` names a higher version and whose
   `releases/download/v<that>/` holds its dmg, install.sh and SHA256SUMS, and start the app's

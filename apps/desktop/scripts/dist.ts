@@ -1,8 +1,9 @@
 // Release builds. `pnpm dist <step>`, run in this order; release.yml runs the same steps.
 //
 //   runtime                      web app + bundled server and CLI + Electron's main, in apps/desktop/dist
-//   cli <os-arch>...             self-contained `getmyprof` tarballs, each with its own Node
-//   desktop <mac|linux> <arch>...  dmg + zip, or AppImage + deb, with latest*.yml for the updater
+//   cli <os-arch>...             self-contained `getmyprof` tarballs (zips for Windows) with Node
+//   desktop <mac|linux|win> <arch>...  dmg + zip, AppImage + deb, or setup .exe + .msi, and the
+//                                updater's latest*.yml
 //   npm                          the `getmyprof` npm package, packed (never published from here)
 //   sums                         SHA256SUMS over the release assets in dist/release
 //   manifests                    the Homebrew cask for this release, in dist/publish
@@ -37,7 +38,14 @@ const sdk = String(
     NodePath.join(root, "apps/server/node_modules/@anthropic-ai/claude-agent-sdk/package.json"),
   ).version,
 );
-const CLI_TARGETS = ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"];
+const CLI_TARGETS = [
+  "darwin-arm64",
+  "darwin-x64",
+  "linux-x64",
+  "linux-arm64",
+  "win32-x64",
+  "win32-arm64",
+];
 
 const run = (cmd: string, args: string[], cwd = root) => {
   const r = NodeChild.spawnSync(cmd, args, { cwd, stdio: "inherit" });
@@ -106,36 +114,53 @@ async function buildRuntime() {
   });
 }
 
-/** Official Node for one os-arch, checked against nodejs.org's SHASUMS256.txt. */
-async function nodeFor(target: string) {
-  const name = `node-v${NODE}-${target}.tar.gz`;
+/** Official Node for one os-arch (a zip for Windows), checked against nodejs.org's SHASUMS256.txt. */
+async function nodeFor(target: string, win: boolean) {
+  const folder = `node-v${NODE}-${target.replace(/^win32-/, "win-")}`;
+  const name = `${folder}.${win ? "zip" : "tar.gz"}`;
   const base = `https://nodejs.org/dist/v${NODE}`;
-  const tgz = await cached(`${base}/${name}`);
+  const archive = await cached(`${base}/${name}`);
   const sums = NodeFS.readFileSync(
     await cached(`${base}/SHASUMS256.txt`, `node-${NODE}-SHASUMS256.txt`),
     "utf8",
   );
-  if (!sums.includes(`${sha256(tgz)}  ${name}`))
+  if (!sums.includes(`${sha256(archive)}  ${name}`))
     throw new Error(`${name} doesn't match SHASUMS256.txt`);
-  return { tgz, binary: `node-v${NODE}-${target}/bin/node` };
+  return { archive, binary: win ? `${folder}/node.exe` : `${folder}/bin/node` };
 }
 
-/** getmyprof-<v>-<os>-<arch>.tar.gz: the runtime, its Node and the `getmyprof` script. */
+/**
+ * getmyprof-<v>-<os>-<arch>.tar.gz, or .zip for Windows: the runtime, its Node and the `getmyprof`
+ * script (getmyprof.cmd on Windows). Windows zips need `zip` and `unzip` on the building machine.
+ */
 async function buildCli(targets: string[]) {
   for (const target of targets) {
     if (!CLI_TARGETS.includes(target)) throw new Error(`cli targets: ${CLI_TARGETS.join(", ")}`);
+    const win = target.startsWith("win32-");
     const stem = `getmyprof-${version}-${target}`;
     const dir = NodePath.join(root, "dist/stage", stem);
     NodeFS.rmSync(dir, { recursive: true, force: true });
     NodeFS.cpSync(runtime, dir, { recursive: true });
-    const node = await nodeFor(target);
-    run("tar", ["-xzf", node.tgz, "-C", dir, "--strip-components=2", node.binary]);
+    const node = await nodeFor(target, win);
+    NodeFS.mkdirSync(release, { recursive: true });
+    if (win) {
+      run("unzip", ["-q", "-j", node.archive, node.binary, "-d", dir]);
+      NodeFS.copyFileSync(
+        NodePath.join(root, "packaging/getmyprof.cmd"),
+        NodePath.join(dir, "getmyprof.cmd"),
+      );
+      const zip = NodePath.join(release, `${stem}.zip`);
+      // zip adds to an archive that's already there.
+      NodeFS.rmSync(zip, { force: true });
+      run("zip", ["-qr", zip, stem], NodePath.dirname(dir));
+      continue;
+    }
+    run("tar", ["-xzf", node.archive, "-C", dir, "--strip-components=2", node.binary]);
     NodeFS.copyFileSync(
       NodePath.join(root, "packaging/getmyprof.sh"),
       NodePath.join(dir, "getmyprof"),
     );
     NodeFS.chmodSync(NodePath.join(dir, "getmyprof"), 0o755);
-    NodeFS.mkdirSync(release, { recursive: true });
     run("tar", [
       "--no-xattrs",
       "-czf",
@@ -147,7 +172,7 @@ async function buildCli(targets: string[]) {
   }
 }
 
-function desktopConfig(): Configuration {
+function desktopConfig(os: string): Configuration {
   const [owner = "", repo = ""] = releases.split("/");
   const signed = Boolean(process.env.CSC_LINK);
   const entitlements = NodePath.join(desktop, "build/entitlements.mac.plist");
@@ -161,6 +186,9 @@ function desktopConfig(): Configuration {
       version,
       homepage: `https://github.com/${releases}`,
       desktopName: "getmyprof-desktop.desktop",
+      // Windows names the per-user install folder after the package ("@getmyprof/desktop"), and
+      // updates keep that folder. Windows only: the .deb's package name comes from it too.
+      ...(os === "win" ? { name: "getmyprof" } : {}),
     },
     directories: { output: release, buildResources: "build" },
     files: ["package.json", "dist/*.mjs", "dist/*.cjs"],
@@ -186,6 +214,11 @@ function desktopConfig(): Configuration {
       maintainer: "Ehsanul Haque Siam <EhsanulHaqueSiam@users.noreply.github.com>",
       desktop: { entry: { StartupWMClass: "getmyprof-desktop" } },
     },
+    // The setup .exe installs per user and updates itself; the .msi is for managed installs, and
+    // updates arrive as a notice (updates.ts). Unsigned, so Windows warns on first run.
+    win: { target: ["nsis", "msi"] },
+    nsis: { artifactName: "getmyprof-${version}-${arch}-setup.${ext}" },
+    msi: { artifactName: "getmyprof-${version}-${arch}.${ext}" },
     // The static AppImage runtime needs no libfuse2, which Arch and others no longer install.
     toolsets: { appimage: "1.0.3" },
     appImage: { artifactName: "getmyprof-${version}-${arch}.${ext}" },
@@ -209,14 +242,14 @@ function desktopConfig(): Configuration {
 }
 
 async function buildDesktop([os, ...archs]: string[]) {
-  if ((os !== "mac" && os !== "linux") || archs.length === 0)
-    throw new Error("desktop <mac|linux> <x64|arm64>...");
+  if ((os !== "mac" && os !== "linux" && os !== "win") || archs.length === 0)
+    throw new Error("desktop <mac|linux|win> <x64|arm64>...");
   // CI passes an unset secret as "", which electron-builder reads as a certificate path.
   for (const name of ["CSC_LINK", "CSC_KEY_PASSWORD"])
     if (!process.env[name]) delete process.env[name];
   await build({
     projectDir: desktop,
-    config: desktopConfig(),
+    config: desktopConfig(os),
     publish: "never",
     [os]: [],
     x64: archs.includes("x64"),
@@ -236,6 +269,8 @@ function buildNpm() {
     "linux-arm64",
     "linux-x64-musl",
     "linux-arm64-musl",
+    "win32-x64",
+    "win32-arm64",
   ];
   const pkg = {
     name: "getmyprof",
@@ -246,7 +281,7 @@ function buildNpm() {
     type: "module",
     bin: { getmyprof: "cli.mjs" },
     engines: { node: ">=24" },
-    os: ["darwin", "linux"],
+    os: ["darwin", "linux", "win32"],
     optionalDependencies: Object.fromEntries(
       platforms.map((p) => [`@anthropic-ai/claude-agent-sdk-${p}`, sdk]),
     ),
@@ -263,7 +298,8 @@ function buildNpm() {
 }
 
 /** What a release publishes; electron-builder's debug files and folders stay out. */
-const RELEASE_ASSET = /\.(tar\.gz|dmg|zip|blockmap|AppImage|deb)$|^latest-.*\.yml$|^install\.sh$/;
+const RELEASE_ASSET =
+  /\.(tar\.gz|dmg|zip|blockmap|AppImage|deb|exe|msi)$|^latest.*\.yml$|^install\.(sh|ps1)$/;
 
 /** SHA256SUMS over the release's assets, as install.sh and `getmyprof update` check them. */
 function writeSums() {

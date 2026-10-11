@@ -13,6 +13,7 @@ import { ensureClaude, findClaude } from "./agent/binary.ts";
 import {
   findRunning,
   homeDir,
+  INSTALLER,
   latestRelease,
   newer,
   releaseInstaller,
@@ -28,8 +29,9 @@ const here = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
 const Pkg = z.object({ version: z.string(), getmyprof: z.object({ releases: z.string() }) });
 const pkg = Pkg.parse(JSON.parse(NodeFS.readFileSync(NodePath.join(here, "package.json"), "utf8")));
 const releases = releasesUrl(pkg.getmyprof.releases);
-// The tarball puts its Node beside cli.mjs; an npm install runs on the user's own Node.
-const bundledNode = NodePath.dirname(process.execPath) === here;
+// The tarball puts its Node beside cli.mjs; an npm install runs on the user's own Node. Resolved,
+// since Windows' getmyprof.cmd starts it through a "bin\..\<version>" path.
+const bundledNode = NodePath.resolve(NodePath.dirname(process.execPath)) === here;
 
 const HELP = `getmyprof ${pkg.version}: find professors who can fund your degree
 
@@ -52,8 +54,16 @@ const launch = (detached: boolean) =>
   });
 
 function openBrowser(url: string) {
-  const opener = process.platform === "darwin" ? "open" : "xdg-open";
-  NodeChild.spawn(opener, [url], { stdio: "ignore", detached: true })
+  // `start`'s first quoted argument is a window title, so it gets an empty one.
+  const [command, args]: [string, string[]] =
+    process.platform === "win32"
+      ? ["cmd", ["/c", "start", "", url]]
+      : [process.platform === "darwin" ? "open" : "xdg-open", [url]];
+  NodeChild.spawn(command, args, {
+    stdio: "ignore",
+    detached: true,
+    windowsHide: true,
+  })
     .on("error", () => console.log(`Open ${url} in your browser.`))
     .unref();
 }
@@ -141,8 +151,9 @@ async function login() {
 }
 
 /**
- * Installs the newest release with that release's own install.sh, after checking it against the
- * release's SHA256SUMS. Any failure says what and leaves the installed version in place.
+ * Installs the newest release with that release's own installer (install.ps1 on Windows), after
+ * checking it against the release's SHA256SUMS. Any failure says what and leaves the installed
+ * version in place.
  */
 async function update() {
   if (!bundledNode) return console.log("Installed with npm: run npm install -g getmyprof@latest");
@@ -152,9 +163,13 @@ async function update() {
   if (!latest) throw new Error(`No getmyprof release is published yet at ${releases}.`);
   if (!newer(latest, pkg.version)) return console.log(`getmyprof ${pkg.version} is the newest.`);
   const script = await releaseInstaller(releases, latest);
-  const file = NodePath.join(NodeOS.tmpdir(), `getmyprof-install-${process.pid}.sh`);
+  const file = NodePath.join(NodeOS.tmpdir(), `getmyprof-${process.pid}-${INSTALLER}`);
   NodeFS.writeFileSync(file, script);
-  const r = NodeChild.spawnSync("sh", [file], {
+  const [command, args]: [string, string[]] =
+    process.platform === "win32"
+      ? ["powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", file]]
+      : ["sh", [file]];
+  const r = NodeChild.spawnSync(command, args, {
     stdio: "inherit",
     env: { ...process.env, GETMYPROF_VERSION: latest },
   });
